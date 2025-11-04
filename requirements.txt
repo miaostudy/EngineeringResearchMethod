@@ -1,0 +1,7 @@
+gitpython
+dotenv
+jira
+seaborn
+matplotlib
+pandas
+imbalanced-learn
