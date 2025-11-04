@@ -90,13 +90,9 @@ def train_and_evaluate(pipelines, X_train, X_test, y_train, y_test, feature_name
 
     results_df = pd.DataFrame(results).T
     results_df = results_df[['R2 Score', 'MSE', 'RMSE']]
-    print("\n" + "=" * 80)
-    print("所有回归器性能对比:")
-    print("=" * 80)
     print(results_df.round(4))
 
     results_df.to_csv("./regression_results.csv", encoding='utf-8-sig')
-    print(f"\n性能结果已保存到: ./regression_results.csv")
 
     return results, results_df, feature_names
 
@@ -121,7 +117,6 @@ def visualize_results(results, results_df, X_test, y_test, feature_names):
     plt.savefig(os.path.join(FIGURE_DIR, 'metrics_comparison.png'), dpi=300, bbox_inches='tight')
 
     best_reg_name = results_df['R2 Score'].idxmax()
-    print(f"\n选择性能最优回归器进行详细可视化: {best_reg_name}")
     best_results = results[best_reg_name]
     y_pred = best_results['y_pred']
 
@@ -153,31 +148,6 @@ def visualize_results(results, results_df, X_test, y_test, feature_names):
     ax.grid(alpha=0.3)
     plt.tight_layout()
     plt.savefig(os.path.join(FIGURE_DIR, 'residual_plot.png'), dpi=300, bbox_inches='tight')
-
-    if '随机森林回归' in results:
-        rf_pipeline = results['随机森林回归']['pipeline']
-        selector = rf_pipeline.named_steps['selector']
-        regressor = rf_pipeline.named_steps['regressor']
-
-        selected_idx = selector.get_support(indices=True)
-        selected_features = [feature_names[i] for i in selected_idx]
-
-        result = permutation_importance(
-            rf_pipeline, X_test, y_test, n_repeats=10, random_state=RANDOM_STATE, n_jobs=-1
-        )
-        feature_importance = result.importances_mean
-
-        fig, ax = plt.subplots(figsize=(10, 6))
-        sorted_idx = np.argsort(feature_importance)
-        ax.barh(range(len(sorted_idx)), feature_importance[sorted_idx], align='center', color='#2ca02c')
-        ax.set_yticks(range(len(sorted_idx)))
-        ax.set_yticklabels([selected_features[i] for i in sorted_idx])
-        ax.set_xlabel('特征重要性（排列重要性）', fontsize=12)
-        ax.set_title('随机森林回归 - 特征重要性排序', fontsize=14, fontweight='bold')
-        ax.grid(axis='x', alpha=0.3)
-        plt.tight_layout()
-        plt.savefig(os.path.join(FIGURE_DIR, 'feature_importance.png'), dpi=300, bbox_inches='tight')
-
 
 
 def main():

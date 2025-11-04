@@ -4,6 +4,5 @@
     <mapping directory="" vcs="Git" />
     <mapping directory="$PROJECT_DIR$" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/avro_repo" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/data" vcs="Git" />
   </component>
 </project>
