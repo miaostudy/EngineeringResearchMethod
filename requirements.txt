@@ -5,3 +5,4 @@ seaborn
 matplotlib
 pandas
 imbalanced-learn
+tqdm

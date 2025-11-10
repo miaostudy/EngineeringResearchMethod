@@ -15,11 +15,11 @@ import warnings
 
 warnings.filterwarnings('ignore')
 
-DATA_PATH = "./defect_prediction_dataset.csv"
+DATA_PATH = "defect_prediction_dataset.csv"
 TEST_SIZE = 0.3
 RANDOM_STATE = 42
 FEATURE_SELECT_K = 8
-FIGURE_DIR = "./regression_figures"
+FIGURE_DIR = "regression_figures"
 
 import os
 
@@ -30,7 +30,7 @@ plt.rcParams['axes.unicode_minus'] = False
 
 def load_and_preprocess_data():
     df = pd.read_csv(DATA_PATH)
-    X = df.drop(['filename', 'is_buggy', 'bug_count', 'BugRate'], axis=1)
+    X = df.drop(['filename', 'is_buggy', 'bug_count'], axis=1)
     y = df['bug_count']
     feature_names = X.columns.tolist()
 

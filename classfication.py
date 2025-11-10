@@ -19,11 +19,11 @@ import warnings
 
 warnings.filterwarnings('ignore')
 
-DATA_PATH = "./defect_prediction_dataset.csv"
-TEST_SIZE = 0.3
+DATA_PATH = "defect_prediction_dataset.csv"
+TEST_SIZE = 0.2
 RANDOM_STATE = 42
 FEATURE_SELECT_K = 8
-FIGURE_DIR = "./classification_figures"
+FIGURE_DIR = "classification_figures"
 
 import os
 
@@ -34,7 +34,7 @@ plt.rcParams['axes.unicode_minus'] = False
 
 def load_and_preprocess_data():
     df = pd.read_csv(DATA_PATH)
-    X = df.drop(['filename', 'is_buggy', 'bug_count', 'BugRate', 'AvgBugPriority'], axis=1)
+    X = df.drop(['filename', 'is_buggy', 'bug_count'], axis=1)
     y = df['is_buggy']
     feature_names = X.columns.tolist()
 
@@ -71,9 +71,6 @@ def build_models():
 def train_and_evaluate(pipelines, X_train, X_test, y_train, y_test, feature_names):
     results = {}
     for name, pipeline in pipelines.items():
-        print(f"\n【{name}】")
-        print("-" * 50)
-
         pipeline.fit(X_train, y_train)
 
         y_pred = pipeline.predict(X_test)
