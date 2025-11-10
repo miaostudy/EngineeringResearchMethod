@@ -16,7 +16,7 @@ import warnings
 warnings.filterwarnings('ignore')
 
 DATA_PATH = "defect_prediction_dataset.csv"
-TEST_SIZE = 0.3
+TEST_SIZE = 0.2
 RANDOM_STATE = 42
 FEATURE_SELECT_K = 8
 FIGURE_DIR = "regression_figures"
