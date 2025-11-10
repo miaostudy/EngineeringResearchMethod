@@ -22,24 +22,7 @@ def clone_or_update_repo(repo_url, local_path):
         )
         repo.git.fetch("--tags")
     else:
-        print("Updating repository")
         repo = git.Repo(local_path)
-        try:
-            repo.git.fetch("origin", "--all", "--prune", "--tags")
-            print("拉取所有分支和标签成功")
-        except Exception as e:
-            print(f"拉取所有分支失败，尝试仅拉取当前分支：{e}")
-            repo.remotes.origin.pull()
-
-        if repo.git.rev_parse("--is-shallow-repository") == "true":
-            print("Converting shallow clone to full history...")
-            try:
-                repo.git.fetch("--unshallow")
-                repo.git.fetch("--tags")
-            except Exception as e:
-                print(f"转换完整历史失败：{e}")
-
-        repo.remotes.origin.pull()
     return repo
 
 
@@ -53,14 +36,6 @@ def get_target_version_commit(repo, target_version):
         target_tag = tags[target_version]
 
     target_commit = target_tag.commit
-    target_time = datetime.fromtimestamp(target_commit.committed_date)
-    head_time = datetime.fromtimestamp(repo.head.commit.committed_date)
-
-    print(f"目标版本 {target_version} 信息：")
-    print(f"  Commit: {target_commit.hexsha[:8]}")
-    print(f"  提交时间: {target_time.strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"  当前HEAD提交时间: {head_time.strftime('%Y-%m-%d %H:%M:%S')}")
-
     return target_commit
 
 
@@ -96,9 +71,7 @@ def extract_git_features(repo, target_files, target_commit):
     matched_file_count = 0
 
     print("\nExtracting Git features")
-    # 1. 先获取提交总数（用于进度条），去掉 all=True（仅主分支）
     total_commits = sum(1 for _ in repo.iter_commits(until=target_commit, reverse=True))
-    # 2. 添加提交遍历进度条
     for commit in tqdm(repo.iter_commits(until=target_commit, reverse=True), total=total_commits, desc="处理提交"):
         commit_count += 1
         author = commit.author.email
@@ -122,7 +95,6 @@ def extract_git_features(repo, target_files, target_commit):
     print(f"有Git特征的文件数: {len([f for f in file_stats if file_stats[f]['ChangeRate'] > 0])}")
 
     print("Calculating LOC for target version files...")
-    # 3. 添加文件LOC计算进度条
     for f_lower in tqdm(target_files, desc="计算文件LOC"):
         original_path = None
         for blob in target_commit.tree.traverse():
@@ -165,7 +137,6 @@ def load_jira_bugs_xml(jira_file):
     priority_map = {"Blocker": 5, "Critical": 4, "Major": 3, "Minor": 2, "Trivial": 1}
     bug_list = []
 
-    # 添加XML解析进度条
     items = root.findall(".//item")
     for item in tqdm(items, desc="加载Bug数据"):
         bug_id = item.findtext("key")
@@ -193,9 +164,7 @@ def extract_bug_features(repo, target_files, jira_df, target_commit):
     matched_bug_commit_count = 0
 
     print("\nExtracting Bug features")
-    # 1. 获取提交总数（用于进度条），去掉 all=True（仅主分支）
     total_commits = sum(1 for _ in repo.iter_commits(until=target_commit, reverse=True))
-    # 2. 添加提交遍历进度条
     for commit in tqdm(repo.iter_commits(until=target_commit, reverse=True), total=total_commits, desc="处理提交"):
         commit_count += 1
         msg = commit.message.lower()
@@ -229,7 +198,6 @@ def extract_bug_features(repo, target_files, jira_df, target_commit):
 
 
 def add_defect_labels(repo, target_files, jira_df, target_commit):
-    """标注标签"""
     labels = {f: {"is_buggy": 0, "bug_count": 0} for f in target_files}
     bug_priority_map = dict(zip(jira_df['BugID'], jira_df['Priority']))
 
@@ -237,9 +205,7 @@ def add_defect_labels(repo, target_files, jira_df, target_commit):
     bug_commit_count = 0
 
     print("\nLabeling buggy files")
-    # 1. 获取提交总数（用于进度条），去掉 all=True（仅主分支）
     total_commits = sum(1 for _ in repo.iter_commits(after=target_commit, reverse=True))
-    # 2. 添加提交遍历进度条
     for commit in tqdm(repo.iter_commits(after=target_commit, reverse=True), total=total_commits, desc="处理提交"):
         commit_count += 1
         msg = commit.message.lower()
@@ -265,12 +231,9 @@ def add_defect_labels(repo, target_files, jira_df, target_commit):
 
 
 def save_features_csv(file_stats, bug_stats, labels, target_commit, output_file=OUTPUT_CSV):
-    """保存数据集"""
     rows = []
-    target_commit_sha = target_commit.hexsha[:8]
     target_version = TARGET_VERSION
 
-    # 添加数据保存进度条
     for f in tqdm(file_stats, desc="生成CSV数据"):
         original_path = None
         for blob in target_commit.tree.traverse():
@@ -297,13 +260,10 @@ def save_features_csv(file_stats, bug_stats, labels, target_commit, output_file=
     df = pd.DataFrame(rows)
     df.to_csv(output_file, index=False, encoding='utf-8-sig')
 
-    print("\n" + "=" * 50)
     print("数据集统计:")
     print(f"目标版本: {target_version}")
     print(f"总样本数: {len(df)}")
     print(f"分类标签分布: {df['is_buggy'].value_counts().to_dict()}（0=非Bug，1=Bug）")
-    print(f"有历史变更的文件数: {len(df[df['ChangeRate'] > 0])}")
-    print(f"有历史Bug的文件数: {len(df[df['BugRate'] > 0])}")
     print(f"回归标签统计: 平均Bug数={df['bug_count'].mean():.2f}，最大Bug数={df['bug_count'].max()}")
     print(f"数据集已保存到: {output_file}")
 
