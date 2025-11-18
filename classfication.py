@@ -16,6 +16,8 @@ from sklearn.metrics import (
 from imblearn.over_sampling import SMOTE
 from imblearn.pipeline import Pipeline as ImbPipeline
 import warnings
+import xgboost as xgb
+import lightgbm as lgb
 
 warnings.filterwarnings('ignore')
 
@@ -32,6 +34,7 @@ os.makedirs(FIGURE_DIR, exist_ok=True)
 plt.rcParams['font.sans-serif'] = ['SimHei']
 plt.rcParams['axes.unicode_minus'] = False
 
+
 def load_and_preprocess_data():
     df = pd.read_csv(DATA_PATH)
     X = df.drop(['filename', 'is_buggy', 'bug_count'], axis=1)
@@ -44,6 +47,7 @@ def load_and_preprocess_data():
 
     return X_train, X_test, y_train, y_test, feature_names
 
+
 def build_models():
     feature_engineering = [
         ('scaler', StandardScaler()),
@@ -54,14 +58,17 @@ def build_models():
         "逻辑回归": LogisticRegression(random_state=RANDOM_STATE, max_iter=1000),
         "决策树": DecisionTreeClassifier(random_state=RANDOM_STATE),
         "随机森林": RandomForestClassifier(random_state=RANDOM_STATE, n_estimators=100),
-        "支持向量机": SVC(random_state=RANDOM_STATE, probability=True, kernel='rbf')
+        "支持向量机": SVC(random_state=RANDOM_STATE, probability=True, kernel='rbf'),
+        "XGB分类": xgb.XGBClassifier(random_state=RANDOM_STATE, n_estimators=100, use_label_encoder=False,
+                                     eval_metric='logloss'),
+        "LGB分类": lgb.LGBMClassifier(random_state=RANDOM_STATE, n_estimators=100)
     }
 
     pipelines = {}
     for name, clf in classifiers.items():
         pipelines[name] = ImbPipeline([
             *feature_engineering,
-            ('smote', SMOTE(random_state=RANDOM_STATE)),
+            ('smote', SMOTE(random_state=RANDOM_STATE)),  # 已有上采样，保留
             ('classifier', clf)
         ])
 
@@ -71,6 +78,9 @@ def build_models():
 def train_and_evaluate(pipelines, X_train, X_test, y_train, y_test, feature_names):
     results = {}
     for name, pipeline in pipelines.items():
+        print(f"\n{'=' * 50}")
+        print(f"模型: {name}")
+        print(f"{'=' * 50}")
         pipeline.fit(X_train, y_train)
 
         y_pred = pipeline.predict(X_test)
@@ -98,12 +108,57 @@ def train_and_evaluate(pipelines, X_train, X_test, y_train, y_test, feature_name
     results_df = pd.DataFrame(results).T
     results_df = results_df[['Precision', 'Recall', 'F1-Score', 'AUC']]
 
+    print(f"\n{'=' * 50}")
+    print("所有模型性能对比:")
+    print(results_df.round(4))
+
     results_df.to_csv("./classification_results.csv", encoding='utf-8-sig')
 
     return results, results_df, feature_names
 
 
-def visualize_results(results, results_df, X_test, y_test, feature_names):
+def plot_feature_importance(results, feature_names, X_train, y_train):
+    best_model_name = max(results.keys(), key=lambda x: results[x]['F1-Score'])
+    best_pipeline = results[best_model_name]['pipeline']
+
+    selector = best_pipeline.named_steps['selector']
+    selected_feature_indices = selector.get_support(indices=True)
+    selected_feature_names = [feature_names[i] for i in selected_feature_indices]
+
+    classifier = best_pipeline.named_steps['classifier']
+
+    if hasattr(classifier, 'feature_importances_'):
+        importances = classifier.feature_importances_
+    else:
+        X_processed = best_pipeline.named_steps['smote'].fit_resample(
+            best_pipeline.named_steps['selector'].transform(
+                best_pipeline.named_steps['scaler'].transform(X_train)
+            ), y_train
+        )[0]
+        result = permutation_importance(
+            classifier, X_processed, y_train, n_repeats=10,
+            random_state=RANDOM_STATE, n_jobs=-1
+        )
+        importances = result.importances_mean
+
+    fig, ax = plt.subplots(figsize=(12, 8))
+    sorted_idx = np.argsort(importances)
+
+    ax.barh(range(len(sorted_idx)), importances[sorted_idx], align='center', color='#ff7f0e', alpha=0.8)
+    ax.set_yticks(range(len(sorted_idx)))
+    ax.set_yticklabels([selected_feature_names[i] for i in sorted_idx])
+    ax.set_xlabel('特征重要性', fontsize=12)
+    ax.set_title(f'{best_model_name} - 特征重要性排名', fontsize=14, fontweight='bold')
+    ax.grid(axis='x', alpha=0.3)
+
+    for i, v in enumerate(importances[sorted_idx]):
+        ax.text(v + 0.001, i, f'{v:.4f}', va='center', fontsize=10)
+
+    plt.tight_layout()
+    plt.savefig(os.path.join(FIGURE_DIR, 'feature_importance.png'), dpi=300, bbox_inches='tight')
+
+
+def visualize_results(results, results_df, X_test, y_test, feature_names, X_train, y_train):
     fig, ax = plt.subplots(figsize=(12, 8))
     metrics = ['Precision', 'Recall', 'F1-Score', 'AUC']
     x = np.arange(len(results_df.index))
@@ -124,7 +179,6 @@ def visualize_results(results, results_df, X_test, y_test, feature_names):
     plt.savefig(os.path.join(FIGURE_DIR, 'metrics_comparison.png'), dpi=300, bbox_inches='tight')
 
     best_clf_name = results_df['F1-Score'].idxmax()
-
     best_results = results[best_clf_name]
     cm = confusion_matrix(y_test, best_results['y_pred'])
 
@@ -152,14 +206,15 @@ def visualize_results(results, results_df, X_test, y_test, feature_names):
     plt.tight_layout()
     plt.savefig(os.path.join(FIGURE_DIR, 'roc_curves.png'), dpi=300, bbox_inches='tight')
 
+    plot_feature_importance(results, feature_names, X_train, y_train)
+
+
 def main():
     X_train, X_test, y_train, y_test, feature_names = load_and_preprocess_data()
-
     pipelines = build_models()
-
     results, results_df, feature_names = train_and_evaluate(pipelines, X_train, X_test, y_train, y_test, feature_names)
+    visualize_results(results, results_df, X_test, y_test, feature_names, X_train, y_train)  # 传递X_train和y_train
 
-    visualize_results(results, results_df, X_test, y_test, feature_names)
 
 if __name__ == "__main__":
     main()

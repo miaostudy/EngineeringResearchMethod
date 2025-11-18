@@ -6,3 +6,5 @@ matplotlib
 pandas
 imbalanced-learn
 tqdm
+xgboost
+lightgbm

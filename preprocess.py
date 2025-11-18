@@ -39,23 +39,6 @@ def get_target_version_commit(repo, target_version):
     return target_commit
 
 
-def get_target_version_files(repo, target_commit):  # 修正参数匹配
-    tree = target_commit.tree
-    target_files = []
-
-    def traverse_tree(t):
-        for blob in t:
-            if blob.type == "blob":
-                file_path = blob.path.lower()
-                target_files.append(file_path)
-            elif blob.type == "tree":
-                traverse_tree(blob)
-
-    traverse_tree(tree)
-    target_files = list(set(target_files))
-    print(f"{TARGET_VERSION} 包含 {len(target_files)} 个文件")
-    return target_files
-
 
 def extract_git_features(repo, target_files, target_commit):
     file_stats = defaultdict(lambda: {

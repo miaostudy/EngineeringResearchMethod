@@ -12,6 +12,10 @@ from sklearn.linear_model import LinearRegression
 from sklearn.metrics import r2_score, mean_squared_error
 from sklearn.inspection import permutation_importance
 import warnings
+import xgboost as xgb
+import lightgbm as lgb
+from imblearn.over_sampling import RandomOverSampler  # 回归任务上采样
+from imblearn.pipeline import Pipeline as ImbPipeline  # 支持采样的Pipeline
 
 warnings.filterwarnings('ignore')
 
@@ -28,6 +32,7 @@ os.makedirs(FIGURE_DIR, exist_ok=True)
 plt.rcParams['font.sans-serif'] = ['SimHei']
 plt.rcParams['axes.unicode_minus'] = False
 
+
 def load_and_preprocess_data():
     df = pd.read_csv(DATA_PATH)
     X = df.drop(['filename', 'is_buggy', 'bug_count'], axis=1)
@@ -39,6 +44,7 @@ def load_and_preprocess_data():
     )
     return X_train, X_test, y_train, y_test, feature_names
 
+
 def build_models():
     feature_engineering = [
         ('scaler', StandardScaler()),
@@ -49,19 +55,25 @@ def build_models():
         "线性回归": LinearRegression(),
         "决策树回归": DecisionTreeRegressor(random_state=RANDOM_STATE),
         "随机森林回归": RandomForestRegressor(random_state=RANDOM_STATE, n_estimators=100),
-        "支持向量回归": SVR(kernel='rbf')
+        "支持向量回归": SVR(kernel='rbf'),
+        "XGB回归": xgb.XGBRegressor(random_state=RANDOM_STATE, n_estimators=100, objective='reg:squarederror'),
+        "LGB回归": lgb.LGBMRegressor(random_state=RANDOM_STATE, n_estimators=100)
     }
 
     pipelines = {}
     for name, reg in regressors.items():
-        pipelines[name] = Pipeline([
+        # 所有模型都加入上采样
+        pipelines[name] = ImbPipeline([
             *feature_engineering,
+            # ('oversampler', RandomOverSampler(random_state=RANDOM_STATE)),
             ('regressor', reg)
         ])
 
     return pipelines
 
+
 from sklearn.pipeline import Pipeline
+
 
 def train_and_evaluate(pipelines, X_train, X_test, y_train, y_test, feature_names):
     results = {}
@@ -90,11 +102,53 @@ def train_and_evaluate(pipelines, X_train, X_test, y_train, y_test, feature_name
 
     results_df = pd.DataFrame(results).T
     results_df = results_df[['R2 Score', 'MSE', 'RMSE']]
+    print(f"\n{'=' * 50}")
+    print("所有模型性能对比:")
     print(results_df.round(4))
 
     results_df.to_csv("./regression_results.csv", encoding='utf-8-sig')
 
     return results, results_df, feature_names
+
+
+def plot_feature_importance(results, feature_names):
+    best_model_name = max(results.keys(), key=lambda x: results[x]['R2 Score'])
+    best_pipeline = results[best_model_name]['pipeline']
+
+    selector = best_pipeline.named_steps['selector']
+    selected_feature_indices = selector.get_support(indices=True)
+    selected_feature_names = [feature_names[i] for i in selected_feature_indices]
+
+    regressor = best_pipeline.named_steps['regressor']
+
+    if hasattr(regressor, 'feature_importances_'):
+        importances = regressor.feature_importances_
+    else:
+        X_processed = best_pipeline.named_steps['selector'].transform(
+            best_pipeline.named_steps['scaler'].transform(X_train)
+        )
+        result = permutation_importance(
+            regressor, X_processed, y_train, n_repeats=10,
+            random_state=RANDOM_STATE, n_jobs=-1
+        )
+        importances = result.importances_mean
+
+    fig, ax = plt.subplots(figsize=(12, 8))
+    sorted_idx = np.argsort(importances)
+
+    ax.barh(range(len(sorted_idx)), importances[sorted_idx], align='center', color='#1f77b4', alpha=0.8)
+    ax.set_yticks(range(len(sorted_idx)))
+    ax.set_yticklabels([selected_feature_names[i] for i in sorted_idx])
+    ax.set_xlabel('特征重要性', fontsize=12)
+    ax.set_title(f'{best_model_name} - 特征重要性排名', fontsize=14, fontweight='bold')
+    ax.grid(axis='x', alpha=0.3)
+
+    for i, v in enumerate(importances[sorted_idx]):
+        ax.text(v + 0.001, i, f'{v:.4f}', va='center', fontsize=10)
+
+    plt.tight_layout()
+    plt.savefig(os.path.join(FIGURE_DIR, 'feature_importance.png'), dpi=300, bbox_inches='tight')
+
 
 def visualize_results(results, results_df, X_test, y_test, feature_names):
     fig, ax = plt.subplots(figsize=(12, 8))
@@ -121,7 +175,6 @@ def visualize_results(results, results_df, X_test, y_test, feature_names):
     y_pred = best_results['y_pred']
 
     fig, ax = plt.subplots(figsize=(10, 8))
-
     ax.scatter(y_test, y_pred, alpha=0.6, color='#1f77b4', label='预测值')
 
     max_val = max(y_test.max(), y_pred.max())
@@ -149,8 +202,11 @@ def visualize_results(results, results_df, X_test, y_test, feature_names):
     plt.tight_layout()
     plt.savefig(os.path.join(FIGURE_DIR, 'residual_plot.png'), dpi=300, bbox_inches='tight')
 
+    plot_feature_importance(results, feature_names)
+
 
 def main():
+    global X_train, y_train
     X_train, X_test, y_train, y_test, feature_names = load_and_preprocess_data()
     pipelines = build_models()
     results, results_df, feature_names = train_and_evaluate(pipelines, X_train, X_test, y_train, y_test, feature_names)
